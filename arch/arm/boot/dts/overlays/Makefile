@@ -241,6 +241,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	rpi-digiampplus.dtbo \
 	rpi-ft5406.dtbo \
 	rpi-fw-uart.dtbo \
+	rpi-ltc4296.dtbo \
 	rpi-poe.dtbo \
 	rpi-poe-plus.dtbo \
 	rpi-sense.dtbo \
