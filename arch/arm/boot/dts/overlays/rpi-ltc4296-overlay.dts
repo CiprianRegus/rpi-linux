@@ -54,16 +54,28 @@
 	};
 };
 
-&spi1 {
+&spi6_cs_pins {
+	brcm,pins = <16>;
+	brcm,function = <1>; /* output */
+};
+
+&spi6 {
 	#address-cells = <1>;
 	#size-cells = <0>;
 	status = "okay";
 
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi6_pins>, <&spi6_cs_pins>;
+	cs-gpios = <&gpio 16 1>;
+
 	ltc4296: ltc4296@0 {
 		compatible = "adi,ltc4296";
 		reg = <0>;
+
+		adi,sccpo-gpios = <&gpio 23 GPIO_ACTIVE_HIGH>;
+		adi,sccpi-gpios = <&gpio 22 GPIO_ACTIVE_HIGH>;
+
 		spi-max-frequency = <500000>;
-		adi,sccpo-gpios = <&gpio 17 GPIO_ACTIVE_HIGH>;
-		adi,sccpi-gpios = <&gpio 18 GPIO_ACTIVE_HIGH>;
+
 	};
 };
