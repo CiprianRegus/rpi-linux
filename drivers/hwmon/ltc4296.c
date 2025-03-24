@@ -180,8 +180,6 @@
 
 #define LTC4296_MAX_PORTS			5
 
-#define RTESTLOAD				200 /*(ohm)*/
-
 #define T_RSTL_NOM		9000
 #define T_MSP			2000
 
@@ -338,12 +336,12 @@ u16 sccp_classes[SCCP_CLASS_SIZE] = {
     0x3BF, // class 7
     0x37F, // class 8
     0x2FF, // class 9
-    0x001, // class 10 /* Supported by D2Z Board*/
-    0x002, // class 11 /* Supported by D2Z Board*/
-    0x003, // class 12 /* Supported by D2Z Board*/
-    0x004, // class 13 /* Supported by D2Z Board*/
-    0x005, // class 14 /* Supported by D2Z Board*/
-    0x006  // class 15 /* Supported by D2Z Board*/
+    0x001, // class 10
+    0x002, // class 11
+    0x003, // class 12
+    0x004, // class 13
+    0x005, // class 14
+    0x006  // class 15
 };
 
 static u8 set_port_vout[LTC4296_MAX_PORTS] = {0x04, 0x06, 0x08, 0x0A, 0x0C};
@@ -401,34 +399,17 @@ static u8 get_CRC(u8* buf)
 	return crc;
 }
 
-u8 READ_LINE(struct ltc4296_port_data *port)
-{
-	return gpiod_get_value(port->sccpi);
-}
-
-void PULL_DOWN_LINE(struct ltc4296_port_data *port)
-{
-	gpiod_set_value(port->sccpo, 1);
-}
-
-void RELEASE_LINE(struct ltc4296_port_data *port)
-{
-	gpiod_set_value(port->sccpo, 0);
-}
-
 void write_bit(struct ltc4296_port_data *port, u8 bit)
 {
-	PULL_DOWN_LINE(port);
-	if (bit)
-	{
+	gpiod_set_value(port->sccpo, 1);
+
+	if (bit){
 		udelay(300);
-		RELEASE_LINE(port);
+		gpiod_set_value(port->sccpo, 0);
 		udelay(2150);//T_WRITESLOT-T_REC-T_W1L = 2.15
-	}
-	else
-	{
-		udelay(2450); //TW0L + 0.45 = 2.45
-		RELEASE_LINE(port);
+	} else {
+		udelay(2450); // TW0L + 0.45 = 2.45
+		gpiod_set_value(port->sccpo, 0);
 	}
 
 	/*Recovery time after every bit transmit */
@@ -453,14 +434,14 @@ u8 read_bit(struct ltc4296_port_data *port)
 {
 	u8 bit;
 
-	PULL_DOWN_LINE(port);
+	gpiod_set_value(port->sccpo, 1);
 	udelay(300); //T_W1L =0.3
 
-	RELEASE_LINE(port);
+	gpiod_set_value(port->sccpo, 0);
 
 	udelay(700); //T_MSR-T_W1L = 1.225-0.3 = 700
 
-	bit = READ_LINE(port);
+	bit = gpiod_get_value(port->sccpi);;
 
 	udelay(2000); //T_READSLOT-T_MSR = 3-1 =2
 
@@ -502,41 +483,42 @@ enum adi_ltc_result sccp_reset_pulse(struct ltc4296_port_data *port)
 	u8 level=0;
 	//u32 i=0,j,k;
 	enum adi_ltc_result ret= ADI_LTC_SCCP_PD_PRESENT;
+	uint8_t sccpi_val;
 
-	printk("Reset Pulse 0x%X\n", port->sccpi);
-	printk("Reset Pulse 0x%X\n", port->sccpo);
+	sccpi_val = gpiod_get_value(port->sccpi);
 
 	/* check if the line is high before reset pulse */
-	if(!READ_LINE(port))
+	if(!sccpi_val)
 	{
 		return ADI_LTC_SCCP_PD_LINE_NOT_HIGH;
 	}
 
-	/* assert pulse */
-	PULL_DOWN_LINE(port);
+	gpiod_set_value(port->sccpo, 1);
 
 	/* check to make sure line is actually getting pulled down (protect pull down fet) */
 	udelay(3000);
 
-	if(READ_LINE(port))
+	sccpi_val = gpiod_get_value(port->sccpi);
+
+	if(sccpi_val)
 	{
 		/* release because fet must be pulling down against stronger source than a classification v source */
-		RELEASE_LINE(port);
+		gpiod_set_value(port->sccpo, 0);
 		return ADI_LTC_SCCP_PD_LINE_NOT_LOW;
 	}
 
-	udelay(T_RSTL_NOM-3000);
+	udelay(T_RSTL_NOM - 3000);
 
-	RELEASE_LINE(port);
+	gpiod_set_value(port->sccpo, 0);
 
 	udelay(T_MSP);
 
 	/* look for presence pulse */
-	level = READ_LINE(port);
+	sccpi_val = gpiod_get_value(port->sccpi);
 
-	if(level == 1)
+	if(sccpi_val)
 		ret = ADI_LTC_SCCP_PD_NOT_PRESENT;
-	else if(level == 0)
+	else
 		ret = ADI_LTC_SCCP_PD_PRESENT;
 
 	return ret;
