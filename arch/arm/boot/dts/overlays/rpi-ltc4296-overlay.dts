@@ -72,10 +72,22 @@
 		compatible = "adi,ltc4296";
 		reg = <0>;
 
-		adi,sccpo-gpios = <&gpio 23 GPIO_ACTIVE_HIGH>;
-		adi,sccpi-gpios = <&gpio 22 GPIO_ACTIVE_HIGH>;
-
 		spi-max-frequency = <500000>;
 
+		ports {
+			port@2 {
+				reg = <0x2>;
+				adi,sccpo-gpio = <&gpio 23 GPIO_ACTIVE_HIGH>;
+				adi,sccpi-gpio = <&gpio 22 GPIO_ACTIVE_HIGH>;
+				adi,hs-resistor = <250>;
+			};
+
+			port@3 {
+				reg = <0x3>;
+				adi,sccpo-gpio = <&gpio 18 GPIO_ACTIVE_HIGH>;
+				adi,sccpi-gpio = <&gpio 17 GPIO_ACTIVE_HIGH>;
+				adi,hs-resistor = <250>;
+			};
+		};
 	};
 };

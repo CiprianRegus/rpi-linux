@@ -355,11 +355,17 @@ struct ltc4296_vi {
 	bool  ltc4296_print_vin;
 };
 
-struct ltc4296_state {
+struct ltc4296_port_data {
+	enum ltc4296_port port;
 	struct gpio_desc *sccpo;
 	struct gpio_desc *sccpi;
+	u32 hs_sense_resistor;
+};
+
+struct ltc4296_state {
 	struct spi_device *spi;
 	struct ltc4296_vi ltc4296_vi;
+	struct ltc4296_port_data port_data[LTC4296_MAX_PORTS];
 	u8 data[5];
 };
 
@@ -395,40 +401,34 @@ static u8 get_CRC(u8* buf)
 	return crc;
 }
 
-u8 READ_LINE(struct ltc4296_state *st)
+u8 READ_LINE(struct ltc4296_port_data *port)
 {
-	volatile u32 bit=0;
-
-	bit = gpiod_get_value(st->sccpi);
-
-	// printk("READ_LINE: %d\n", bit);
-
-	return bit;
+	return gpiod_get_value(port->sccpi);
 }
 
-void PULL_DOWN_LINE(struct ltc4296_state *st)
+void PULL_DOWN_LINE(struct ltc4296_port_data *port)
 {
-	gpiod_set_value(st->sccpo, 1);
+	gpiod_set_value(port->sccpo, 1);
 }
 
-void RELEASE_LINE(struct ltc4296_state *st)
+void RELEASE_LINE(struct ltc4296_port_data *port)
 {
-	gpiod_set_value(st->sccpo, 0);
+	gpiod_set_value(port->sccpo, 0);
 }
 
-void write_bit(struct ltc4296_state *st, u8 bit)
+void write_bit(struct ltc4296_port_data *port, u8 bit)
 {
-	PULL_DOWN_LINE(st);
+	PULL_DOWN_LINE(port);
 	if (bit)
 	{
 		udelay(300);
-		RELEASE_LINE(st);
+		RELEASE_LINE(port);
 		udelay(2150);//T_WRITESLOT-T_REC-T_W1L = 2.15
 	}
 	else
 	{
 		udelay(2450); //TW0L + 0.45 = 2.45
-		RELEASE_LINE(st);
+		RELEASE_LINE(port);
 	}
 
 	/*Recovery time after every bit transmit */
@@ -437,30 +437,30 @@ void write_bit(struct ltc4296_state *st, u8 bit)
 	return;
 }
 
-void transmit_byte(struct ltc4296_state *st, u8 tx_byte)
+void transmit_byte(struct ltc4296_port_data *port, u8 tx_byte)
 {
 	u8 bit_pos = 0;
 	while (bit_pos < 8)
 	{
 		u8 bit = (tx_byte>>bit_pos) & 0x01;
-		write_bit(st, bit);
+		write_bit(port, bit);
 		bit_pos++;
 	}
 	return;
 }
 
-u8 read_bit(struct ltc4296_state *st)
+u8 read_bit(struct ltc4296_port_data *port)
 {
 	u8 bit;
 
-	PULL_DOWN_LINE(st);
+	PULL_DOWN_LINE(port);
 	udelay(300); //T_W1L =0.3
 
-	RELEASE_LINE(st);
+	RELEASE_LINE(port);
 
 	udelay(700); //T_MSR-T_W1L = 1.225-0.3 = 700
 
-	bit = READ_LINE(st);
+	bit = READ_LINE(port);
 
 	udelay(2000); //T_READSLOT-T_MSR = 3-1 =2
 
@@ -468,7 +468,7 @@ u8 read_bit(struct ltc4296_state *st)
 	return bit;
 }
 
-void receive_response(struct ltc4296_state *st, u8* buf)
+void receive_response(struct ltc4296_port_data *port, u8* buf)
 {
 	volatile u8 rx_byte = 0;
 	volatile u8 bytes_rxd=0;
@@ -481,7 +481,7 @@ void receive_response(struct ltc4296_state *st, u8* buf)
 		bit_pos = 0;
 		while(bit_pos < 8)
 		{
-			u8 bit = read_bit(st);
+			u8 bit = read_bit(port);
 			rx_byte |= (bit<<bit_pos);
 			bit_pos++;
 		}
@@ -489,45 +489,50 @@ void receive_response(struct ltc4296_state *st, u8* buf)
 		bytes_rxd++;
 		udelay(5000);
 	}
-	buf[0]=sccp_buf[0];
-	buf[1]=sccp_buf[1];
-	buf[2]=sccp_buf[2];
+
+	buf[0] = sccp_buf[0];
+	buf[1] = sccp_buf[1];
+	buf[2] = sccp_buf[2];
+
 	return;
 }
 
-enum adi_ltc_result sccp_reset_pulse(struct ltc4296_state *st)
+enum adi_ltc_result sccp_reset_pulse(struct ltc4296_port_data *port)
 {
 	u8 level=0;
 	//u32 i=0,j,k;
 	enum adi_ltc_result ret= ADI_LTC_SCCP_PD_PRESENT;
 
+	printk("Reset Pulse 0x%X\n", port->sccpi);
+	printk("Reset Pulse 0x%X\n", port->sccpo);
+
 	/* check if the line is high before reset pulse */
-	if(!READ_LINE(st))
+	if(!READ_LINE(port))
 	{
 		return ADI_LTC_SCCP_PD_LINE_NOT_HIGH;
 	}
 
 	/* assert pulse */
-	PULL_DOWN_LINE(st);
+	PULL_DOWN_LINE(port);
 
 	/* check to make sure line is actually getting pulled down (protect pull down fet) */
 	udelay(3000);
 
-	if(READ_LINE(st))
+	if(READ_LINE(port))
 	{
 		/* release because fet must be pulling down against stronger source than a classification v source */
-		RELEASE_LINE(st);
+		RELEASE_LINE(port);
 		return ADI_LTC_SCCP_PD_LINE_NOT_LOW;
 	}
 
 	udelay(T_RSTL_NOM-3000);
 
-	RELEASE_LINE(st);
+	RELEASE_LINE(port);
 
 	udelay(T_MSP);
 
 	/* look for presence pulse */
-	level = READ_LINE(st);
+	level = READ_LINE(port);
 
 	if(level == 1)
 		ret = ADI_LTC_SCCP_PD_NOT_PRESENT;
@@ -537,11 +542,11 @@ enum adi_ltc_result sccp_reset_pulse(struct ltc4296_state *st)
 	return ret;
 }
 
-enum adi_ltc_result sccp_read_write_pd(struct ltc4296_state *st, u8 addr, u8 cmd, u8* buf)
+enum adi_ltc_result sccp_read_write_pd(struct ltc4296_port_data *port, u8 addr, u8 cmd, u8* buf)
 {
 	enum adi_ltc_result ret;
 
-	ret = sccp_reset_pulse(st);
+	ret = sccp_reset_pulse(port);
 	if(ret == ADI_LTC_SCCP_PD_NOT_PRESENT)
 		return ADI_LTC_SCCP_PD_NOT_PRESENT; //PD is not present
 	else if(ret == ADI_LTC_SCCP_PD_LINE_NOT_LOW)
@@ -550,11 +555,11 @@ enum adi_ltc_result sccp_read_write_pd(struct ltc4296_state *st, u8 addr, u8 cmd
 		return ADI_LTC_SCCP_PD_LINE_NOT_HIGH;
 
 	udelay(5000);
-	transmit_byte(st, addr);
+	transmit_byte(port, addr);
 	udelay(5000);
-	transmit_byte(st, cmd);
+	transmit_byte(port, cmd);
 	udelay(5000);
-	receive_response(st, buf);
+	receive_response(port, buf);
 
 	/* Check if the received data from PD is valid */
 	if (get_CRC(buf) != buf[2] )
@@ -1006,7 +1011,7 @@ static int ltc4296_read_port_adc(struct ltc4296_state *st, enum ltc4296_port por
 	if ((val16 & LTC4296_NEW_MSK) == LTC4296_NEW_MSK){
 		/* A new ADC value is available */
 		*port_i_out_ma = (((val16 & 0x0FFF) - 2048) * 1000 /
-				  (10 * 250));
+				  (10 * st->port_data[port_no].hs_sense_resistor));
 	} else {
 		return ADI_LTC_INVALID_ADC_PORT_CURRENT;
 	}
@@ -1095,8 +1100,7 @@ static int ltc4296_set_port_mfvs(struct ltc4296_state *st, enum ltc4296_port por
 		return ret;
 
 	/* LTC4296-1 Set Port ADC MFVS Threshold Value */
-	// val = ltc4296_spoe_sense_resistor[port_no];
-	val = 250;
+	val = st->port_data[port_no].hs_sense_resistor;
 	mfvs_threshold = (625 * val / 10);
 	/* Round of to the nearest integer */
 	val16 = DIV_ROUND_CLOSEST(mfvs_threshold, 1000);
@@ -1509,13 +1513,15 @@ static int ltc4296_read(struct device *dev, enum hwmon_sensor_types type,
 	return ret;
 }
 
-static int ltc4296_sccp_res_pd(struct ltc4296_state *st, u16 *res_data,
+static int ltc4296_sccp_res_pd(struct ltc4296_port_data *port, u16 *res_data,
 			       u8 broadcast_addr, u8 read_scratchpad)
 {
 	uint8_t sccp_buf[3] = {0, 0, 0};
 	enum adi_ltc_result ret;
 
-	ret = sccp_read_write_pd(st, broadcast_addr, read_scratchpad, sccp_buf);
+	printk("ltc4296_sccp_res_pd(): for port %d\n", port->port);
+
+	ret = sccp_read_write_pd(port, broadcast_addr, read_scratchpad, sccp_buf);
 
 	printk("PD comm: %d\n", ret);
 
@@ -1576,7 +1582,7 @@ static int ltc4296_do_sccp(struct ltc4296_state *st, uint32_t port)
 			if ((raw_port_status & LTC4296_PSE_STATUS_MSK) == LTC_PSE_STATUS_SEARCHING){
 				printk("Port %d is searching for PD\n", port);
 
-				ret = ltc4296_sccp_res_pd(st, &pd_resp_data, 0xCC, 0xAA);
+				ret = ltc4296_sccp_res_pd(&st->port_data[port], &pd_resp_data, 0xCC, 0xAA);
 				if (ret == ADI_LTC_SCCP_PD_PRESENT){
 					// printk("PD present on port %d\n", port);
 					ret = ltc4296_set_port_mfvs(st, port);
@@ -1602,8 +1608,6 @@ static int ltc4296_do_sccp(struct ltc4296_state *st, uint32_t port)
 				}
 			}
 		}
-	} else {
-		printk("Port %d is enabled??????????\n", port);
 	}
 
 	return 0;
@@ -1637,6 +1641,56 @@ static const struct hwmon_chip_info ltc4296_chip_info = {
 	.info = ltc4296_info,
 };
 
+static int ltc4296_parse_port_cfg(struct device *dev, struct ltc4296_state *st)
+{
+	struct fwnode_handle *sub_port_node;
+	struct fwnode_handle *port_node;
+	u32 reg;
+	int ret;
+
+	fwnode_for_each_available_child_node(dev_fwnode(dev), port_node){
+		printk(KERN_ERR "Port node\n");
+		fwnode_for_each_available_child_node(port_node, sub_port_node){
+			printk(KERN_ERR "Sub port node\n");
+
+			ret = fwnode_property_read_u32(sub_port_node, "reg", &reg);
+			if (ret){
+				printk(KERN_ERR "Error reading reg property\n");
+				return ret;
+			}
+
+			printk("Read reg property: %d\n", reg);
+			st->port_data[reg].port = reg;
+			st->port_data[reg].sccpi = devm_fwnode_gpiod_get(dev,
+									 sub_port_node,
+									 "adi,sccpi",
+									 GPIOD_IN,
+									 "adi,sccpi");
+
+			if (IS_ERR(st->port_data[reg].sccpi)){
+				printk(KERN_ERR "Error getting sccpi\n");
+				return PTR_ERR(st->port_data[reg].sccpi);
+			}
+
+			st->port_data[reg].sccpo = devm_fwnode_gpiod_get(dev,
+									 sub_port_node,
+									 "adi,sccpo",
+									 GPIOD_OUT_LOW,
+									 "adi,sccpo");
+			if (IS_ERR(st->port_data[reg].sccpo)){
+				printk(KERN_ERR "Error getting sccpo\n");
+				return PTR_ERR(st->port_data[reg].sccpo);
+			}
+
+			fwnode_property_read_u32(sub_port_node,
+						 "adi,hs-resistor",
+						 &st->port_data[reg].hs_sense_resistor);
+		}
+	}
+
+	return 0;
+}
+
 static int ltc4296_probe(struct spi_device *spi)
 {
 	enum ltc4296_port_status port_status;
@@ -1652,18 +1706,24 @@ static int ltc4296_probe(struct spi_device *spi)
 
 	st->spi = spi;
 
-	st->sccpo = devm_gpiod_get(&st->spi->dev, "adi,sccpo",
-					  GPIOD_OUT_LOW);
-	if (IS_ERR(st->sccpo)){
-		printk(KERN_ERR "ltc4296 probe: error getting sccpo\n");
-		return PTR_ERR(st->sccpo);
-	}
+	// st->sccpo = devm_gpiod_get(&st->spi->dev, "adi,sccpo",
+	// 				  GPIOD_OUT_LOW);
+	// if (IS_ERR(st->sccpo)){
+	// 	printk(KERN_ERR "ltc4296 probe: error getting sccpo\n");
+	// 	return PTR_ERR(st->sccpo);
+	// }
 
-	st->sccpi = devm_gpiod_get(&st->spi->dev, "adi,sccpi",
-					  GPIOD_IN);
-	if (IS_ERR(st->sccpi)){
-		printk(KERN_ERR "ltc4296 probe: error getting sccpo\n");
-		return PTR_ERR(st->sccpi);
+	// st->sccpi = devm_gpiod_get(&st->spi->dev, "adi,sccpi",
+	// 				  GPIOD_IN);
+	// if (IS_ERR(st->sccpi)){
+	// 	printk(KERN_ERR "ltc4296 probe: error getting sccpo\n");
+	// 	return PTR_ERR(st->sccpi);
+	// }
+
+	ret = ltc4296_parse_port_cfg(&st->spi->dev, st);
+	if (ret){
+		printk(KERN_ERR "Error parsing port cfg\n");
+		return ret;
 	}
 
 	ret = ltc4296_init(st);
@@ -1677,7 +1737,7 @@ static int ltc4296_probe(struct spi_device *spi)
 	// ltc4296_do_sccp(st, 0);
 	// ltc4296_do_sccp(st, 1);
 	ltc4296_do_sccp(st, 2);
-	// ltc4296_do_sccp(st, 3);
+	ltc4296_do_sccp(st, 3);
 	// ltc4296_do_sccp(st, 4);
 
 	// for (int i = 0; i < 5; i++) {
