@@ -236,12 +236,15 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	rotary-encoder.dtbo \
 	rpi-backlight.dtbo \
 	rpi-codeczero.dtbo \
+	rpi-cn0591-class12.dtbo \
+	rpi-cn0591-class14.dtbo \
 	rpi-dacplus.dtbo \
 	rpi-dacpro.dtbo \
 	rpi-digiampplus.dtbo \
 	rpi-ft5406.dtbo \
 	rpi-fw-uart.dtbo \
-	rpi-ltc4296.dtbo \
+	rpi-cn0591-class12.dtbo \
+	rpi-cn0591-class14.dtbo \
 	rpi-poe.dtbo \
 	rpi-poe-plus.dtbo \
 	rpi-sense.dtbo \
