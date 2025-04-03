@@ -243,6 +243,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	rpi-digiampplus.dtbo \
 	rpi-ft5406.dtbo \
 	rpi-fw-uart.dtbo \
+	rpi-cn0591-apl.dtbo \
 	rpi-cn0591-class12.dtbo \
 	rpi-cn0591-class14.dtbo \
 	rpi-poe.dtbo \
