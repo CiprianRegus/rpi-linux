@@ -24,10 +24,27 @@
 	status = "disabled";
 };
 
+&gpio{
+	spi0_cs_pins_alt: spi0_cs_pins_alt {
+		brcm,pins = <8>;
+		brcm,function = <1>;
+	};
+
+	ltc4296_pins: ltc4296_pins{
+		brcm,pins = <7>;
+		brcm,function = <0>;
+		brcm,pull = <0>;
+	};
+};
+
 &spi0 {
 	#address-cells = <1>;
 	#size-cells = <0>;
 	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi0_pins &spi0_cs_pins_alt>;
+
+	cs-gpios = <&gpio 8 1>;
 
 	ethernet@0 {
 		compatible = "adi,adin2111";
@@ -66,7 +83,7 @@
 	status = "okay";
 
 	pinctrl-names = "default";
-	pinctrl-0 = <&spi6_pins>, <&spi6_cs_pins>;
+	pinctrl-0 = <&spi6_pins>, <&spi6_cs_pins>, <&ltc4296_pins>;
 	cs-gpios = <&gpio 16 1>;
 
 	ltc4296: ltc4296@0 {
@@ -75,7 +92,7 @@
 
 		spi-max-frequency = <500000>;
 
-		wakeup-gpio = <&gpio 7 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio 7 (GPIO_ACTIVE_LOW | GPIO_PULL_DISABLE)>;
 
 		ports {
 			port@2 {
